@@ -104,7 +104,7 @@ git clone https://github.com/Prateekdevops-619/shopNow.git
 
 ### 📧 Alerts
 Jenkins pipeline sends alerts on failure:
-post {
+``` post {
   failure {
     echo "ALERT: Deployment Failed!"
     mail to: 'your-email@example.com',
@@ -112,8 +112,6 @@ post {
          body: "Build #${env.BUILD_NUMBER} failed. Check Grafana for resource health."
   }
 }
-
-
 
 ### 🌟 Author
 Prateek – Solution Architect & DevOps Enthusiast
