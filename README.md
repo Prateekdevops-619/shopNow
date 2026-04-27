@@ -11,7 +11,6 @@
 [![AWS](https://img.shields.io/badge/AWS-eu--west--2-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?logo=grafana&logoColor=white)](https://grafana.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
@@ -32,9 +31,6 @@
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Monitoring & Observability](#monitoring--observability)
 - [Troubleshooting](#troubleshooting)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
 - [Author](#author)
 
 ---
@@ -81,7 +77,7 @@ A high-level view of the end-to-end flow:
                           ║         │ pull     │  │  Public subnet — ALB, IGW, EKS API      │  │    ║
                           ║         ▼          │  └────────────────────┬────────────────────┘  │    ║
                           ║   ┌──────────────┐ │  ┌────────────────────▼────────────────────┐  │    ║
-                          ║   │ EKS Cluster  │ │  │  Private subnet — EKS worker nodes      │  │    ║
+                          ║   │ EKS Cluster  │ │  │  Public subnet — EKS worker nodes      │  │    ║
                           ║   │ Frontend Pod │ │  │  Frontend  ─►  Backend  ─►  MongoDB     │  │    ║
                           ║   │ Backend  Pod │ │  │              Prometheus  ─►  Grafana    │  │    ║
                           ║   │ MongoDB Pod  │ │  └─────────────────────────────────────────┘  │    ║
@@ -110,7 +106,7 @@ A high-level view of the end-to-end flow:
 | **Backend** | Node.js / Express | REST API |
 | **Database** | MongoDB | Document store for catalog & orders |
 | **Monitoring** | Prometheus + Grafana | Metrics, dashboards, alerts |
-| **Notifications** | SMTP / Webhook | Failure alerts to email & chat |
+
 
 ---
 
