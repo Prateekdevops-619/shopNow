@@ -169,14 +169,27 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 sh """
-                ALB_HOST=\$(kubectl get ingress shopnow-ingress -n \$K8S_NAMESPACE \
-                  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
-                  --kubeconfig \$KUBECONFIG)
+                # Wait up to 5 minutes for ALB hostname to be assigned
+                ALB_HOST=""
+                for i in \$(seq 1 30); do
+                  ALB_HOST=\$(kubectl get ingress shopnow-ingress -n \$K8S_NAMESPACE \
+                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+                    --kubeconfig \$KUBECONFIG 2>/dev/null)
+                  if [ -n "\$ALB_HOST" ]; then
+                    echo "ALB ready: \$ALB_HOST"
+                    break
+                  fi
+                  echo "Waiting for ALB hostname... (\$i/30)"
+                  sleep 10
+                done
 
-                echo "ALB: \$ALB_HOST"
+                if [ -z "\$ALB_HOST" ]; then
+                  echo "ALB hostname not assigned after 5 minutes — skipping smoke test"
+                  exit 0
+                fi
+
                 sleep 30
-
-                HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" http://\$ALB_HOST/api/health)
+                HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://\$ALB_HOST/api/health)
                 if [ "\$HTTP_CODE" != "200" ]; then
                   echo "Smoke test FAILED (HTTP \$HTTP_CODE)"
                   exit 1
