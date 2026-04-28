@@ -20,6 +20,10 @@ spec:
       labels:
         app: frontend
     spec:
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: frontend-nginx-config
       containers:
         - name: frontend
           image: 975050024946.dkr.ecr.eu-west-2.amazonaws.com/shopnow-frontend:latest
@@ -33,6 +37,10 @@ spec:
             limits:
               memory: "128Mi"
               cpu: "200m"
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
           livenessProbe:
             httpGet:
               path: /health
