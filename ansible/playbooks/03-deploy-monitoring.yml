@@ -4,7 +4,7 @@
   become: false
 
   vars:
-    kubeconfig_path: "/home/ec2-user/.kube/config"
+    kubeconfig_path: "/var/lib/jenkins/.kube/config"
     manifests_base: "/var/lib/jenkins/workspace/shopnow-pipeline/k8s/monitoring"
 
   tasks:

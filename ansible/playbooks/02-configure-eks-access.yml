@@ -6,12 +6,12 @@
   vars:
     aws_region: "eu-west-2"
     eks_cluster_name: "shopnow-eks"
-    kubeconfig_path: "/home/ec2-user/.kube/config"
+    kubeconfig_path: "/var/lib/jenkins/.kube/config"
 
   tasks:
     - name: Ensure .kube directory exists
       file:
-        path: /home/ec2-user/.kube
+        path: /var/lib/jenkins/.kube
         state: directory
         mode: "0700"
 
