@@ -1,0 +1,128 @@
+---
+- name: Install all dependencies on Jenkins EC2
+  hosts: jenkins
+  become: true
+
+  vars:
+    docker_users:
+      - ec2-user
+    kubectl_version: "1.28.0"
+    terraform_version: "1.6.4"
+    node_version: "18"
+
+  tasks:
+    # ── System packages ──────────────────────────────────────────────────────
+    - name: Update all system packages
+      yum:
+        name: "*"
+        state: latest
+        update_cache: true
+
+    - name: Install base utilities
+      yum:
+        name:
+          - git
+          - curl
+          - unzip
+          - jq
+          - python3
+          - python3-pip
+        state: present
+
+    # ── Docker ───────────────────────────────────────────────────────────────
+    - name: Install Docker
+      yum:
+        name: docker
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add users to docker group
+      user:
+        name: "{{ item }}"
+        groups: docker
+        append: true
+      loop: "{{ docker_users }}"
+
+    # ── AWS CLI v2 ────────────────────────────────────────────────────────────
+    - name: Download AWS CLI v2
+      get_url:
+        url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+        dest: /tmp/awscliv2.zip
+
+    - name: Unzip AWS CLI
+      unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp/
+        remote_src: true
+
+    - name: Install AWS CLI
+      command: /tmp/aws/install --update
+      args:
+        creates: /usr/local/bin/aws
+
+    # ── kubectl ───────────────────────────────────────────────────────────────
+    - name: Download kubectl {{ kubectl_version }}
+      get_url:
+        url: "https://dl.k8s.io/release/v{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: "0755"
+
+    # ── Terraform ─────────────────────────────────────────────────────────────
+    - name: Download Terraform {{ terraform_version }}
+      get_url:
+        url: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+        dest: /tmp/terraform.zip
+
+    - name: Unzip and install Terraform
+      unarchive:
+        src: /tmp/terraform.zip
+        dest: /usr/local/bin/
+        remote_src: true
+        mode: "0755"
+
+    # ── Ansible (self) ────────────────────────────────────────────────────────
+    - name: Install Ansible via pip
+      pip:
+        name: ansible
+        executable: pip3
+
+    # ── Docker Compose ────────────────────────────────────────────────────────
+    - name: Install Docker Compose plugin
+      get_url:
+        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: "0755"
+
+    # ── Verify installs ───────────────────────────────────────────────────────
+    - name: Verify Docker
+      command: docker --version
+      register: docker_ver
+      changed_when: false
+
+    - name: Verify kubectl
+      command: kubectl version --client --short
+      register: kubectl_ver
+      changed_when: false
+
+    - name: Verify Terraform
+      command: terraform version
+      register: tf_ver
+      changed_when: false
+
+    - name: Verify AWS CLI
+      command: aws --version
+      register: aws_ver
+      changed_when: false
+
+    - name: Print versions
+      debug:
+        msg:
+          - "Docker:    {{ docker_ver.stdout }}"
+          - "kubectl:   {{ kubectl_ver.stdout }}"
+          - "Terraform: {{ tf_ver.stdout_lines[0] }}"
+          - "AWS CLI:   {{ aws_ver.stdout }}"

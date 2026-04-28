@@ -1,0 +1,70 @@
+---
+- name: Configure EKS access and kubeconfig on Jenkins server
+  hosts: jenkins
+  become: false
+
+  vars:
+    aws_region: "eu-west-2"
+    eks_cluster_name: "shopnow-eks"
+    kubeconfig_path: "/home/ec2-user/.kube/config"
+
+  tasks:
+    - name: Ensure .kube directory exists
+      file:
+        path: /home/ec2-user/.kube
+        state: directory
+        mode: "0700"
+
+    - name: Update kubeconfig for EKS cluster
+      command: >
+        aws eks update-kubeconfig
+          --region {{ aws_region }}
+          --name {{ eks_cluster_name }}
+          --kubeconfig {{ kubeconfig_path }}
+      register: kubeconfig_result
+      changed_when: "'Updated context' in kubeconfig_result.stdout"
+
+    - name: Verify cluster connectivity
+      command: kubectl get nodes --kubeconfig {{ kubeconfig_path }}
+      register: nodes_output
+      changed_when: false
+
+    - name: Print cluster nodes
+      debug:
+        var: nodes_output.stdout_lines
+
+    - name: Create shopnow namespace (idempotent)
+      command: >
+        kubectl apply -f - --kubeconfig {{ kubeconfig_path }}
+      args:
+        stdin: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: shopnow
+      register: ns_result
+      changed_when: "'created' in ns_result.stdout"
+
+    - name: Install AWS Load Balancer Controller (Helm)
+      block:
+        - name: Add EKS Helm repo
+          command: helm repo add eks https://aws.github.io/eks-charts
+          changed_when: false
+
+        - name: Update Helm repos
+          command: helm repo update
+          changed_when: false
+
+        - name: Install AWS Load Balancer Controller
+          command: >
+            helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller
+              --namespace kube-system
+              --set clusterName={{ eks_cluster_name }}
+              --set serviceAccount.create=true
+              --kubeconfig {{ kubeconfig_path }}
+          register: helm_result
+          changed_when: "'deployed' in helm_result.stdout or 'upgraded' in helm_result.stdout"
+      rescue:
+        - name: Helm not available — skip ALB controller install
+          debug:
+            msg: "Helm not found. Install manually or via Jenkins pipeline."

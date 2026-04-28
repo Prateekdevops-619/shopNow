@@ -1,0 +1,59 @@
+---
+- name: Deploy Prometheus and Grafana monitoring stack to EKS
+  hosts: jenkins
+  become: false
+
+  vars:
+    kubeconfig_path: "/home/ec2-user/.kube/config"
+    manifests_base: "/var/lib/jenkins/workspace/shopnow-pipeline/k8s/monitoring"
+
+  tasks:
+    - name: Apply Prometheus ConfigMap
+      command: >
+        kubectl apply -f {{ manifests_base }}/prometheus-config.yaml
+          --kubeconfig {{ kubeconfig_path }}
+      register: pm_config
+      changed_when: "'configured' in pm_config.stdout or 'created' in pm_config.stdout"
+
+    - name: Apply Prometheus Deployment and Service
+      command: >
+        kubectl apply -f {{ manifests_base }}/prometheus-deployment.yaml
+          --kubeconfig {{ kubeconfig_path }}
+      register: pm_deploy
+      changed_when: "'configured' in pm_deploy.stdout or 'created' in pm_deploy.stdout"
+
+    - name: Apply Grafana Deployment and Service
+      command: >
+        kubectl apply -f {{ manifests_base }}/grafana-deployment.yaml
+          --kubeconfig {{ kubeconfig_path }}
+      register: gf_deploy
+      changed_when: "'configured' in gf_deploy.stdout or 'created' in gf_deploy.stdout"
+
+    - name: Wait for Prometheus to become ready
+      command: >
+        kubectl rollout status deployment/prometheus -n shopnow
+          --timeout=120s --kubeconfig {{ kubeconfig_path }}
+      changed_when: false
+
+    - name: Wait for Grafana to become ready
+      command: >
+        kubectl rollout status deployment/grafana -n shopnow
+          --timeout=120s --kubeconfig {{ kubeconfig_path }}
+      changed_when: false
+
+    - name: Get Prometheus service details
+      command: kubectl get svc prometheus-service -n shopnow --kubeconfig {{ kubeconfig_path }}
+      register: pm_svc
+      changed_when: false
+
+    - name: Get Grafana service details
+      command: kubectl get svc grafana-service -n shopnow --kubeconfig {{ kubeconfig_path }}
+      register: gf_svc
+      changed_when: false
+
+    - name: Print monitoring endpoints
+      debug:
+        msg:
+          - "Prometheus: {{ pm_svc.stdout }}"
+          - "Grafana:    {{ gf_svc.stdout }}"
+          - "Access Grafana via: kubectl port-forward svc/grafana-service 3000:3000 -n shopnow"
