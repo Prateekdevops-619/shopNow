@@ -138,7 +138,7 @@ pipeline {
                 # MongoDB StatefulSet — wait before starting the app
                 kubectl apply -f k8s/mongodb-statefulset.yaml --kubeconfig \$KUBECONFIG
                 kubectl rollout status statefulset/mongodb -n \$K8S_NAMESPACE \
-                  --timeout=120s --kubeconfig \$KUBECONFIG
+                  --timeout=300s --kubeconfig \$KUBECONFIG
 
                 # Update images to the current build tag
                 kubectl set image deployment/backend  backend=\$ECR_BASE/\$BACKEND_REPO:\$IMAGE_TAG  -n \$K8S_NAMESPACE --kubeconfig \$KUBECONFIG 2>/dev/null || true

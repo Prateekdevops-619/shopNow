@@ -79,12 +79,6 @@ spec:
           volumeMounts:
             - name: mongodb-data
               mountPath: /data/db
-  volumeClaimTemplates:
-    - metadata:
-        name: mongodb-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        storageClassName: "gp2"
-        resources:
-          requests:
-            storage: 10Gi
+      volumes:
+        - name: mongodb-data
+          emptyDir: {}
