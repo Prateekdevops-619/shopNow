@@ -176,7 +176,7 @@ pipeline {
                 echo "ALB: \$ALB_HOST"
                 sleep 30
 
-                HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" http://\$ALB_HOST/health)
+                HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" http://\$ALB_HOST/api/health)
                 if [ "\$HTTP_CODE" != "200" ]; then
                   echo "Smoke test FAILED (HTTP \$HTTP_CODE)"
                   exit 1
