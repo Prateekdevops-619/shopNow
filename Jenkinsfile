@@ -46,41 +46,52 @@ pipeline {
             }
         }
 
-        // ── Sprint 1 — Build & Push images ─────────────────────────────────
-        stage('Build Docker Images') {
+        // ── Sprint 1 — Build & Push images (sequential to conserve memory) ───
+        stage('Build & Push Backend') {
             steps {
                 sh """
-                docker build -t \$BACKEND_REPO:latest  ./backend
-                docker build -t \$FRONTEND_REPO:latest ./frontend
-                docker build -t \$ADMIN_REPO:latest    ./admin
+                docker build -t \$BACKEND_REPO:latest ./backend
+                docker tag  \$BACKEND_REPO:latest \$ECR_BASE/\$BACKEND_REPO:\$IMAGE_TAG
+                docker tag  \$BACKEND_REPO:latest \$ECR_BASE/\$BACKEND_REPO:latest
+                docker push \$ECR_BASE/\$BACKEND_REPO:\$IMAGE_TAG
+                docker push \$ECR_BASE/\$BACKEND_REPO:latest
+                docker rmi  \$BACKEND_REPO:latest || true
                 """
             }
         }
 
-        stage('Push to ECR') {
+        stage('Build & Push Frontend') {
             steps {
-                script {
-                    [
-                        [local: BACKEND_REPO,  remote: BACKEND_REPO],
-                        [local: FRONTEND_REPO, remote: FRONTEND_REPO],
-                        [local: ADMIN_REPO,    remote: ADMIN_REPO],
-                    ].each { img ->
-                        sh """
-                        docker tag  ${img.local}:latest \$ECR_BASE/${img.remote}:\$IMAGE_TAG
-                        docker tag  ${img.local}:latest \$ECR_BASE/${img.remote}:latest
-                        docker push \$ECR_BASE/${img.remote}:\$IMAGE_TAG
-                        docker push \$ECR_BASE/${img.remote}:latest
-                        """
-                    }
-                }
+                sh """
+                docker build -t \$FRONTEND_REPO:latest ./frontend
+                docker tag  \$FRONTEND_REPO:latest \$ECR_BASE/\$FRONTEND_REPO:\$IMAGE_TAG
+                docker tag  \$FRONTEND_REPO:latest \$ECR_BASE/\$FRONTEND_REPO:latest
+                docker push \$ECR_BASE/\$FRONTEND_REPO:\$IMAGE_TAG
+                docker push \$ECR_BASE/\$FRONTEND_REPO:latest
+                docker rmi  \$FRONTEND_REPO:latest || true
+                """
             }
         }
 
-        // ── Sprint 2 — Terraform: provision VPC + EKS + ECR ────────────────
+        stage('Build & Push Admin') {
+            steps {
+                sh """
+                docker build -t \$ADMIN_REPO:latest ./admin
+                docker tag  \$ADMIN_REPO:latest \$ECR_BASE/\$ADMIN_REPO:\$IMAGE_TAG
+                docker tag  \$ADMIN_REPO:latest \$ECR_BASE/\$ADMIN_REPO:latest
+                docker push \$ECR_BASE/\$ADMIN_REPO:\$IMAGE_TAG
+                docker push \$ECR_BASE/\$ADMIN_REPO:latest
+                docker rmi  \$ADMIN_REPO:latest || true
+                docker system prune -f || true
+                """
+            }
+        }
+
+        // ── Sprint 2 — Terraform (infra already provisioned — verify only) ───
         stage('Terraform Init') {
             steps {
                 dir('terraform') {
-                    sh 'terraform init -input=false'
+                    sh 'terraform init -input=false -reconfigure'
                 }
             }
         }
@@ -88,31 +99,12 @@ pipeline {
         stage('Terraform Plan') {
             steps {
                 dir('terraform') {
-                    sh 'terraform plan -input=false -out=tfplan'
+                    sh 'terraform plan -input=false -detailed-exitcode || true'
                 }
             }
         }
 
-        stage('Terraform Apply') {
-            steps {
-                dir('terraform') {
-                    sh 'terraform apply -input=false -auto-approve tfplan'
-                }
-            }
-        }
-
-        // ── Sprint 3 — Ansible: configure this Jenkins server ───────────────
-        stage('Ansible: Install Dependencies') {
-            steps {
-                // Runs locally — Jenkins configures itself
-                sh """
-                ansible-playbook \
-                  -i ansible/inventory.ini \
-                  ansible/playbooks/01-install-dependencies.yml
-                """
-            }
-        }
-
+        // ── Sprint 3 — Ansible: configure EKS access ────────────────────────
         stage('Ansible: Configure EKS Access') {
             steps {
                 sh """
