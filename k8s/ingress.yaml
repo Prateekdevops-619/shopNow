@@ -4,7 +4,6 @@ metadata:
   name: shopnow-ingress
   namespace: shopnow
   annotations:
-    kubernetes.io/ingress.class: "alb"
     alb.ingress.kubernetes.io/scheme: "internet-facing"
     alb.ingress.kubernetes.io/target-type: "ip"
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
@@ -15,10 +14,10 @@ metadata:
     alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
     alb.ingress.kubernetes.io/load-balancer-attributes: "idle_timeout.timeout_seconds=60"
 spec:
+  ingressClassName: alb
   rules:
     - http:
         paths:
-          # Admin dashboard — more specific prefix first
           - path: /admin
             pathType: Prefix
             backend:
@@ -26,8 +25,6 @@ spec:
                 name: admin-service
                 port:
                   number: 80
-
-          # Backend API
           - path: /api
             pathType: Prefix
             backend:
@@ -35,8 +32,6 @@ spec:
                 name: backend-service
                 port:
                   number: 5000
-
-          # Customer frontend — catch-all
           - path: /
             pathType: Prefix
             backend:
