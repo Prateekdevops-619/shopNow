@@ -1,13 +1,15 @@
 # ShopNow — End-to-End CI/CD on AWS EKS
 
-> A production-grade MERN e-commerce application deployed via a fully automated Jenkins pipeline on Amazon EKS — from `git push` to a live, monitored deployment.
+> A production-grade MERN e-commerce application deployed via a fully automated Jenkins pipeline on Amazon EKS — from `git push` to a live, monitored deployment with zero manual infrastructure steps.
 
+[![Terraform](https://img.shields.io/badge/Terraform-1.6+-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
+[![Ansible](https://img.shields.io/badge/Ansible-2.15+-EE0000?logo=ansible&logoColor=white)](https://www.ansible.com/)
 [![Jenkins](https://img.shields.io/badge/Jenkins-Declarative%20Pipeline-D24939?logo=jenkins&logoColor=white)](https://www.jenkins.io/)
 [![Docker](https://img.shields.io/badge/Docker-Multi--stage-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-EKS%201.31-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![Terraform](https://img.shields.io/badge/Terraform-1.6+-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![Ansible](https://img.shields.io/badge/Ansible-2.15+-EE0000?logo=ansible&logoColor=white)](https://www.ansible.com/)
 [![AWS](https://img.shields.io/badge/AWS-eu--west--2-FF9900?logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
+[![Prometheus](https://img.shields.io/badge/Prometheus-v2.47-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
+[![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?logo=grafana&logoColor=white)](https://grafana.com/)
 
 ---
 
@@ -20,25 +22,32 @@
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Sprint Breakdown](#sprint-breakdown)
-- [CI/CD Pipeline — 15 Stages](#cicd-pipeline--15-stages)
+  - [Sprint 1 — Application Containerization](#sprint-1--application-containerization)
+  - [Sprint 2 — Infrastructure as Code (Terraform)](#sprint-2--infrastructure-as-code-terraform)
+  - [Sprint 3 — Configuration Management (Ansible)](#sprint-3--configuration-management-ansible)
+  - [Sprint 4 — Kubernetes Deployment](#sprint-4--kubernetes-deployment)
+  - [Sprint 5 — Monitoring & Observability](#sprint-5--monitoring--observability)
+- [CI/CD Pipeline (All 15 Stages)](#cicd-pipeline-all-15-stages)
 - [Kubernetes Workloads](#kubernetes-workloads)
 - [Monitoring & Observability](#monitoring--observability)
-- [Jenkins Access](#jenkins-access)
+- [Issues & Fixes](#issues--fixes)
 - [Author](#author)
 
 ---
 
 ## Overview
 
-**ShopNow** is a full-stack MERN (MongoDB, Express, React, Node.js) e-commerce application that demonstrates the complete DevOps lifecycle. Every `git push` to `main` triggers a 15-stage Jenkins declarative pipeline that:
+**ShopNow** demonstrates the complete DevOps lifecycle — source control, infrastructure provisioning, configuration management, Docker image builds, Kubernetes deployment, and real-time observability — all wired into a single reproducible Jenkins pipeline.
 
-1. **Builds** multi-stage Docker images for `frontend`, `backend`, and `admin`, pushing them to **Amazon ECR**
-2. **Verifies** infrastructure with **Terraform** (S3 remote state, DynamoDB locking)
+Every `git push` to `main` triggers a pipeline that:
+
+1. **Builds** multi-stage Docker images for `frontend`, `backend`, and `admin` and pushes them to **Amazon ECR**
+2. **Provisions** AWS infrastructure (VPC, EKS, IAM, ECR, EC2) with **Terraform** backed by S3 + DynamoDB
 3. **Configures** the Jenkins node with **Ansible** (Docker, kubectl, AWS CLI, Helm)
 4. **Deploys** all workloads to **Amazon EKS** via `kubectl apply`
-5. **Smoke-tests** the live ALB endpoint at `/api/health`
+5. **Verifies** the rollout with health checks and a smoke test against the Load Balancer URL
 6. **Monitors** with **Prometheus** (metrics scraping) and **Grafana** (dashboards)
-7. **Rolls back** all three deployments automatically on any pipeline failure
+7. **Rolls back** all three deployments automatically on pipeline failure
 
 ---
 
@@ -48,20 +57,21 @@
   Developer
      │  git push
      ▼
-  GitHub ──── webhook ────► Jenkins EC2 (52.56.79.23:8080)
+  GitHub ──── webhook ────► Jenkins EC2 (18.134.178.178:8080)
                                     │
               ┌─────────────────────┼──────────────────────┐
               │                     │                      │
          Terraform              Ansible               Docker Build
       (VPC, EKS, IAM,       (kubectl, awscli,      (frontend, backend,
-       ECR, S3, DynamoDB)     Helm, Terraform)           admin)
+       ECR, S3, DynamoDB)     Helm, Terraform)          admin)
                                                           │
                                                     docker push
                                                           │
                               ╔═══════════════════════════▼═══════════════╗
                               ║        AWS  eu-west-2                     ║
                               ║                                           ║
-                              ║  Amazon ECR (975050024946)                ║
+                              ║  Amazon ECR                               ║
+                              ║  975050024946.dkr.ecr.eu-west-2           ║
                               ║  ├── shopnow-backend                      ║
                               ║  ├── shopnow-frontend                     ║
                               ║  └── shopnow-admin                        ║
@@ -77,7 +87,7 @@
                               ║       │   └── grafana    (dashboards)     ║
                               ║       └── Node Group: 2× t3.medium        ║
                               ║                                           ║
-                              ║  ALB Ingress ◄── shopnow-ingress          ║
+                              ║  Classic ELB ◄── frontend-service         ║
                               ╚═══════════════════════════════════════════╝
 ```
 
@@ -87,23 +97,24 @@
 
 | Layer | Technology | Details |
 |---|---|---|
-| **Cloud** | AWS (eu-west-2) | VPC, EKS, ECR, EC2, S3, DynamoDB, ALB |
+| **Cloud** | AWS (eu-west-2) | VPC, EKS, ECR, EC2, S3, DynamoDB, ELB |
 | **IaC** | Terraform ≥ 1.6 | Flat file structure, S3 remote state + DynamoDB locking |
 | **Config Mgmt** | Ansible | 3 playbooks: install deps, configure EKS, deploy monitoring |
 | **CI/CD** | Jenkins (EC2 t3.medium) | Declarative pipeline, 15 stages, AWS credentials binding |
 | **Containers** | Docker multi-stage | Node 18 Alpine build → Nginx Alpine runtime |
-| **Orchestration** | Kubernetes (EKS 1.31) | Deployments, StatefulSet, HPA, ConfigMap, Secrets, Ingress |
-| **Frontend** | React + Nginx | Served under `/aryan/` sub-path with nginx API proxy |
+| **Orchestration** | Kubernetes (EKS 1.31) | Deployments, StatefulSet, HPA, ConfigMap, Secrets |
+| **Frontend** | React + Nginx | Served under `/aryan/` sub-path via nginx rewrite |
 | **Backend** | Node.js / Express | REST API on port 5000, `/api/health` endpoint |
-| **Admin** | React | Admin panel, port 80 |
-| **Database** | MongoDB 6.0 | StatefulSet with headless service |
+| **Database** | MongoDB 6.0 | StatefulSet with headless service, emptyDir storage |
 | **Registry** | Amazon ECR | shopnow-backend, shopnow-frontend, shopnow-admin |
 | **Monitoring** | Prometheus + Grafana | ClusterRole RBAC, 15d retention, pod annotation scraping |
-| **Autoscaling** | HPA (autoscaling/v2) | CPU + Memory metrics, scale-up/down stabilization windows |
+| **Autoscaling** | HPA (autoscaling/v2) | CPU + Memory metrics, scale-up/down stabilization |
 
 ---
 
 ## Repository Structure
+
+All infrastructure, configuration, and application code lives on the `main` branch:
 
 ```
 shopNow/
@@ -114,12 +125,10 @@ shopNow/
 │   └── src/
 ├── backend/                         # Node.js / Express REST API
 │   ├── Dockerfile
-│   └── server.js
-├── admin/                           # React admin panel
-│   ├── Dockerfile
-│   ├── nginx/default.conf
 │   └── src/
-├── terraform/                       # Flat IaC (no nested modules)
+├── admin/                           # React admin panel
+│   └── Dockerfile
+├── terraform/                       # Flat IaC (no modules)
 │   ├── backend.tf                   # S3 backend + DynamoDB locking
 │   ├── main.tf                      # Provider + S3 bucket + DynamoDB table
 │   ├── vpc.tf                       # VPC, public subnets (2 AZs), IGW, route tables
@@ -130,7 +139,7 @@ shopNow/
 │   ├── variables.tf
 │   └── outputs.tf
 ├── ansible/
-│   ├── inventory.ini                # Jenkins host: 52.56.79.23
+│   ├── inventory.ini                # Jenkins host: 18.134.178.178
 │   └── playbooks/
 │       ├── 01-install-dependencies.yml   # Git, Docker, kubectl, Terraform, AWS CLI
 │       ├── 02-configure-eks-access.yml   # kubeconfig + namespace + Helm ALB controller
@@ -140,21 +149,15 @@ shopNow/
 │   ├── mongodb-secret.yaml          # Base64-encoded credentials
 │   ├── mongodb-statefulset.yaml     # MongoDB 6.0 + headless service
 │   ├── backend-deployment.yaml      # 2 replicas, /api/health probes, Prometheus annotations
-│   ├── frontend-nginx-configmap.yaml
-│   ├── frontend-deployment.yaml     # 2 replicas, LoadBalancer service
-│   ├── admin-deployment.yaml        # 2 replicas
+│   ├── frontend-nginx-configmap.yaml # nginx proxy config as ConfigMap
+│   ├── frontend-deployment.yaml     # 2 replicas, LoadBalancer service, ConfigMap volume
+│   ├── admin-deployment.yaml
 │   ├── hpa.yaml                     # autoscaling/v2 for backend + frontend
-│   ├── ingress.yaml                 # ALB ingress for shopnow-ingress
+│   ├── ingress.yaml
 │   └── monitoring/
-│       ├── prometheus-config.yaml
-│       ├── prometheus-deployment.yaml
+│       ├── prometheus-config.yaml   # Scrape configs
+│       ├── prometheus-deployment.yaml # ClusterRole RBAC + Deployment + Service
 │       └── grafana-deployment.yaml
-├── docs/
-│   ├── APPLICATION-ARCHITECTURE.md
-│   ├── K8S-CONCEPTS.md
-│   ├── TOOLS-SETUP-GUIDE.md
-│   └── TROUBLESHOOTING.md
-├── docker-compose.yml               # Local development
 ├── Jenkinsfile                      # Declarative pipeline (15 stages)
 └── README.md
 ```
@@ -165,19 +168,18 @@ shopNow/
 
 **AWS account** with permissions to create VPC, EKS, ECR, IAM, EC2, S3, DynamoDB in `eu-west-2`.
 
-**Jenkins EC2** (`t3.medium`, Amazon Linux 2):
-- IAM instance profile `prateek-jenkins-profile` with permissions for EKS, ECR, S3, EC2
+**Jenkins EC2** (`t3.medium`, Amazon Linux 2 / Ubuntu):
+- IAM instance profile with permissions for EKS, ECR, S3, EC2
 - Jenkins credential `aws-cred` of type *AWS Credentials*
 - Ports open: `22` (SSH), `8080` (Jenkins UI)
-- Running as Docker container: `jenkins/jenkins:lts-jdk17`
 
-**Local tooling:**
+**Local tooling** (for manual operations):
 
 ```bash
 aws --version           # AWS CLI v2
-terraform -version      # >= 1.6
+terraform -version      # >= 1.6.4
 ansible --version       # >= 2.15
-kubectl version         # 1.28+
+kubectl version         # 1.28
 helm version            # >= 3.x
 docker --version        # >= 24
 ```
@@ -185,8 +187,8 @@ docker --version        # >= 24
 **Terraform remote state** (create once before first pipeline run):
 
 ```bash
+# From the terraform/ directory
 aws s3 mb s3://shopnow-terraform-state-975050024946 --region eu-west-2
-
 aws dynamodb create-table \
   --table-name shopnow-terraform-locks \
   --attribute-definitions AttributeName=LockID,AttributeType=S \
@@ -199,6 +201,8 @@ aws dynamodb create-table \
 
 ## Quick Start
 
+
+
 ```bash
 # 1. Clone
 git clone https://github.com/Prateekdevops-619/shopNow.git
@@ -210,20 +214,20 @@ terraform init
 terraform apply -auto-approve
 cd ..
 
-# 3. Install Jenkins node dependencies
+# 3. Configure Jenkins node
 ansible-playbook -i ansible/inventory.ini \
   ansible/playbooks/01-install-dependencies.yml
 
-# 4. Configure EKS access on Jenkins node
+# 4. Configure EKS access for Jenkins
 ansible-playbook -i ansible/inventory.ini \
   ansible/playbooks/02-configure-eks-access.yml
 
-# 5. Apply MongoDB secret (update values first)
+# 5. Create MongoDB secret (update values first)
 kubectl apply -f k8s/mongodb-secret.yaml -n shopnow
 
 # 6. Trigger the full pipeline
-#    Open Jenkins at http://52.56.79.23:8080
-#    → ShopNow-CI-CD → Build Now
+#    Open Jenkins at http://18.134.178.178:8080
+#    → shopnow-pipeline → Build Now
 #    (or push a commit to main to trigger via webhook)
 
 # 7. Get the application URL
@@ -237,9 +241,9 @@ kubectl get svc frontend-service -n shopnow \
 
 ### Sprint 1 — Application Containerization
 
-Build slim multi-stage Docker images for all three services.
+Bootstrap Jenkins on EC2 and build slim multi-stage Docker images for all three services.
 
-**Frontend Dockerfile** (React → Nginx, sub-path `/aryan/`):
+**Frontend Dockerfile** (React → Nginx, sub-path build):
 ```dockerfile
 FROM node:18-alpine AS build
 WORKDIR /app
@@ -256,35 +260,47 @@ COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 ```
 
-**nginx proxy config** — the `/aryan/api/` block must come *before* the `/aryan/` rewrite, otherwise API calls get served as static files:
+**nginx proxy config** (the critical fix for API calls under `/aryan/`):
 ```nginx
+# Intercept API calls BEFORE the /aryan/ rewrite
 location /aryan/api/ {
     proxy_pass http://backend-service:5000/api/;
     proxy_set_header Host $host;
 }
 
+# Strip /aryan/ prefix for static assets
 location /aryan/ {
     rewrite ^/aryan/(.*)$ /$1 break;
     try_files $uri $uri/ /index.html;
 }
 ```
 
+> Without the `/aryan/api/` block *before* the `/aryan/` rewrite, API calls get rewritten to `/api/` and then served as files instead of being proxied to the backend.
+
 ---
 
 ### Sprint 2 — Infrastructure as Code (Terraform)
 
-All AWS resources are defined in flat `.tf` files — no nested modules.
+All AWS resources are defined in flat `.tf` files in `terraform/` — no nested modules.
 
-**backend.tf** — remote state:
+**backend.tf** — remote state with S3 + DynamoDB locking:
 ```hcl
-backend "s3" {
-  bucket         = "shopnow-terraform-state-975050024946"
-  key            = "shopnow/eks/terraform.tfstate"
-  region         = "eu-west-2"
-  encrypt        = true
-  dynamodb_table = "shopnow-terraform-locks"
+terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 5.0" }
+  }
+  backend "s3" {
+    bucket         = "shopnow-terraform-state-975050024946"
+    key            = "shopnow/eks/terraform.tfstate"
+    region         = "eu-west-2"
+    encrypt        = true
+    dynamodb_table = "shopnow-terraform-locks"
+  }
 }
 ```
+
+**Resources provisioned:**
 
 | File | Resource |
 |---|---|
@@ -299,13 +315,13 @@ backend "s3" {
 
 ### Sprint 3 — Configuration Management (Ansible)
 
-Three idempotent playbooks target `hosts: jenkins` in `ansible/inventory.ini` (Jenkins at `52.56.79.23`).
+Three idempotent playbooks target `hosts: jenkins` in `ansible/inventory.ini`.
 
 | Playbook | What it does |
 |---|---|
-| `01-install-dependencies.yml` | Installs git, Docker, AWS CLI v2, kubectl v1.28, Terraform v1.6.4 |
-| `02-configure-eks-access.yml` | Creates `.kube/`, runs `aws eks update-kubeconfig`, creates `shopnow` namespace, installs AWS Load Balancer Controller via Helm |
-| `03-deploy-monitoring.yml` | Applies Prometheus + Grafana manifests, waits for rollout |
+| `01-install-dependencies.yml` | yum installs git/docker/python3, enables Docker, adds jenkins to docker group, installs AWS CLI v2, kubectl v1.28, Terraform v1.6.4, Ansible via pip3 |
+| `02-configure-eks-access.yml` | Creates `/var/lib/jenkins/.kube/`, runs `aws eks update-kubeconfig`, creates `shopnow` namespace, installs AWS Load Balancer Controller via Helm |
+| `03-deploy-monitoring.yml` | Applies Prometheus + Grafana manifests, waits for rollout, prints port-forward instructions |
 
 ---
 
@@ -315,61 +331,73 @@ All manifests live in `k8s/` and are applied by the Jenkins pipeline.
 
 **Key design decisions:**
 
-- **MongoDB** StatefulSet with headless service (`clusterIP: None`) for stable DNS (`mongodb-service.shopnow.svc.cluster.local`)
-- **Frontend service** type `LoadBalancer` — cloud controller provisions a Classic ELB automatically
-- **nginx config** delivered via ConfigMap volume — survives pod restarts without image rebuilds
-- **HPA** uses `autoscaling/v2` with both CPU and Memory metrics
+- **MongoDB** uses `emptyDir: {}` storage (no EBS CSI driver required). Data resets on pod restart — suitable for demo/dev.
+- **Frontend service** uses `type: LoadBalancer` — Kubernetes cloud controller provisions a Classic ELB automatically. No AWS Load Balancer Controller required.
+- **nginx config** is delivered via a **ConfigMap** mounted as a volume — survives pod restarts and rolling updates without rebuilding the image.
+- **HPA** uses `autoscaling/v2` with both CPU (60%) and Memory (70%) metrics, and separate scale-up/scale-down stabilization windows.
+
+**Autoscaling configuration:**
 
 ```yaml
-# backend HPA: min 2 → max 8 pods
-scaleUp:   stabilizationWindowSeconds: 60,  2 pods / 60s
-scaleDown: stabilizationWindowSeconds: 300, 1 pod / 120s
+# backend-hpa: min 2, max 8 pods
+scaleUp:   stabilizationWindowSeconds: 60,  2 pods per 60s
+scaleDown: stabilizationWindowSeconds: 300, 1 pod per 120s
+
+# frontend-hpa: min 2, max 6 pods
+scaleUp:   stabilizationWindowSeconds: 60,  2 pods per 60s
+scaleDown: stabilizationWindowSeconds: 300, 1 pod per 120s
 ```
 
 ---
 
 ### Sprint 5 — Monitoring & Observability
 
-Prometheus scrapes all pods annotated with:
+Prometheus uses a `ClusterRole` to scrape metrics from all pods annotated with:
 ```yaml
 prometheus.io/scrape: "true"
 prometheus.io/port:   "5000"
 prometheus.io/path:   "/metrics"
 ```
 
-| Component | Image | Port |
-|---|---|---|
-| Prometheus | `prom/prometheus:v2.47.0` | 9090 |
-| Grafana | `grafana/grafana:latest` | 3000 |
+| Component | Image | Port | Storage |
+|---|---|---|---|
+| Prometheus | `prom/prometheus:v2.47.0` | 9090 | emptyDir, 15d retention |
+| Grafana | `grafana/grafana:latest` | 3000 | emptyDir |
+
+**Access (port-forward):**
+```bash
+kubectl port-forward svc/prometheus-service 9090:9090 -n shopnow
+kubectl port-forward svc/grafana-service    3000:3000 -n shopnow
+```
 
 ---
 
-## CI/CD Pipeline — 15 Stages
+## CI/CD Pipeline (All 15 Stages)
 
 ```
- #1  Checkout
- #2  Configure AWS & ECR Login
- #3  Build & Push Backend       ─┐
- #4  Build & Push Frontend       ├── Sequential (conserves t3.medium memory)
- #5  Build & Push Admin         ─┘
- #6  Terraform Init
- #7  Terraform Plan
- #8  Ansible: Configure EKS Access
- #9  Update kubeconfig
-#10  Deploy to EKS              (namespace, secrets, MongoDB, deployments, HPA, ingress)
-#11  Wait for Rollout           (backend 180s, frontend 120s, admin 120s)
-#12  Smoke Test                 (polls 30× for ALB hostname → curl /api/health)
-#13  Deploy Monitoring          (Prometheus + Grafana)
-#14  Ansible: Configure Monitoring
-#15  Deployment Summary         (kubectl get pods/svc/ingress/hpa)
+ #1 Checkout
+ #2 Configure AWS & ECR Login
+ #3 Build & Push Backend    ──┐
+ #4 Build & Push Frontend     ├── Sequential (conserves memory)
+ #5 Build & Push Admin      ──┘
+ #6 Terraform Init
+ #7 Terraform Plan
+ #8 Ansible: Configure EKS Access
+ #9 Update kubeconfig
+#10 Deploy to EKS
+#11 Wait for Rollout
+#12 Smoke Test               (polls 30× for ELB hostname → curl /api/health)
+#13 Deploy Monitoring
+#14 Ansible: Configure Monitoring
+#15 Deployment Summary
 
 post:
-  success → echo "shopNow is live on EKS"
+  success → echo "shopNow is live"
   failure → kubectl rollout undo (backend + frontend + admin)
   always  → docker rmi cleanup
 ```
 
-**Environment variables:**
+**Jenkins environment variables:**
 
 | Variable | Value |
 |---|---|
@@ -391,12 +419,12 @@ post:
 
 ## Kubernetes Workloads
 
-| Workload | Kind | Replicas | Image | Service |
+| Workload | Kind | Replicas | Image | Service Type |
 |---|---|---|---|---|
-| backend | Deployment | 2 | `shopnow-backend:${BUILD_NUMBER}` | ClusterIP :5000 |
-| frontend | Deployment | 2 | `shopnow-frontend:${BUILD_NUMBER}` | LoadBalancer :80 |
-| admin | Deployment | 2 | `shopnow-admin:${BUILD_NUMBER}` | ClusterIP :80 |
-| mongodb | StatefulSet | 1 | `mongo:6.0` | Headless (ClusterIP: None) :27017 |
+| backend | Deployment | 2 | `shopnow-backend:latest` | ClusterIP :5000 |
+| frontend | Deployment | 2 | `shopnow-frontend:latest` | **LoadBalancer** :80 |
+| admin | Deployment | 2 | `shopnow-admin:latest` | ClusterIP :80 |
+| mongodb | StatefulSet | 1 | `mongo:6.0` | Headless (ClusterIP: None) |
 | prometheus | Deployment | 1 | `prom/prometheus:v2.47.0` | ClusterIP :9090 |
 | grafana | Deployment | 1 | `grafana/grafana:latest` | ClusterIP :3000 |
 
@@ -412,30 +440,17 @@ post:
 
 ## Monitoring & Observability
 
+Prometheus is configured with a `ClusterRole` that grants `get/list/watch` on `nodes`, `services`, `endpoints`, and `pods`, plus access to `/metrics` non-resource URLs.
+
 ```bash
-# Prometheus targets
+# Verify Prometheus targets
 kubectl port-forward svc/prometheus-service 9090:9090 -n shopnow
 # Open http://localhost:9090/targets
 
 # Grafana dashboards
 kubectl port-forward svc/grafana-service 3000:3000 -n shopnow
-# Open http://localhost:3000
-# Add data source: http://prometheus-service:9090
+# Open http://localhost:3000  (add Prometheus as data source: http://prometheus-service:9090)
 ```
-
----
-
-## Jenkins Access
-
-| Item | Value |
-|---|---|
-| **URL** | http://52.56.79.23:8080 |
-| **Username** | `admin` |
-| **Job** | `ShopNow-CI-CD` |
-| **EC2 Instance** | `i-0b81d91b39deff4b8` (eu-west-2) |
-| **Instance Type** | t3.medium |
-| **IAM Profile** | `prateek-jenkins-profile` |
-
 ---
 
 ## Author
@@ -448,5 +463,5 @@ kubectl port-forward svc/grafana-service 3000:3000 -n shopnow
 ---
 
 <p align="center">
-  <sub>Built with Terraform · Ansible · Jenkins · Docker · Kubernetes · Prometheus · Grafana on AWS EKS</sub>
+  <sub>Built with ❤️ using Terraform · Ansible · Jenkins · Docker · Kubernetes · Prometheus · Grafana on AWS EKS</sub>
 </p>
