@@ -511,7 +511,6 @@ kubectl port-forward svc/grafana-service 3000:3000 -n shopnow
 | ALB Ingress not reconciling | IMDSv2 hop limit = 1 blocked pod access to EC2 metadata | Switched frontend-service to `type: LoadBalancer` (Classic ELB, no ALB controller needed) |
 | Products not loading in frontend | React built with `/aryan/api` base URL but nginx had no `/aryan/api/` proxy block | Added `location /aryan/api/` proxy block *before* the `/aryan/` rewrite location in nginx |
 | nginx fix lost after pod restart | Config patched in running container via `kubectl exec` — not persisted | Delivered nginx config via a **ConfigMap** mounted as a volume — survives rolling updates |
-| Helm `--set env[0].name=` bug | Indexed array syntax corrupted env var name to integer `0` | Deleted all Helm release secrets, reinstalled controller with correct values |
 | Terraform state conflict | Concurrent applies racing on local state | S3 backend with DynamoDB conditional-write locking |
 | Docker permission denied | `jenkins` user not in `docker` group | Ansible `user` task adds jenkins to docker group |
 
