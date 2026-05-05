@@ -39,6 +39,12 @@
 
 **ShopNow** demonstrates the complete DevOps lifecycle — source control, infrastructure provisioning, configuration management, Docker image builds, Kubernetes deployment, and real-time observability — all wired into a single reproducible Jenkins pipeline.
 
+**Live application running on AWS EKS via Classic ELB:**
+
+![ShopNow Home Page](assets/screenshots/shopnow-home-page.png)
+
+![ShopNow Products Page](assets/screenshots/shopnow-products-page.png)
+
 Every `git push` to `main` triggers a pipeline that:
 
 1. **Builds** multi-stage Docker images for `frontend`, `backend`, and `admin` and pushes them to **Amazon ECR**
@@ -311,6 +317,22 @@ terraform {
 | `ecr.tf` | ECR repos: shopnow-backend, shopnow-frontend, shopnow-admin |
 | `jenkins-ec2.tf` | Jenkins t3.medium EC2, security group (ports 22, 8080) |
 
+**Terraform stages passing in Jenkins:**
+
+![Terraform Stage Green](assets/screenshots/terraform-stage-green.png)
+
+**S3 remote state bucket:**
+
+![S3 State Bucket](assets/screenshots/s3-state-bucket.png)
+
+**Amazon ECR repositories:**
+
+![Amazon ECR Repositories](assets/screenshots/amazon-ecr-repositories.png)
+
+**VPC resource map (eu-west-2):**
+
+![VPC Resource Map](assets/screenshots/vpc-resource-map.png)
+
 ---
 
 ### Sprint 3 — Configuration Management (Ansible)
@@ -322,6 +344,10 @@ Three idempotent playbooks target `hosts: jenkins` in `ansible/inventory.ini`.
 | `01-install-dependencies.yml` | yum installs git/docker/python3, enables Docker, adds jenkins to docker group, installs AWS CLI v2, kubectl v1.28, Terraform v1.6.4, Ansible via pip3 |
 | `02-configure-eks-access.yml` | Creates `/var/lib/jenkins/.kube/`, runs `aws eks update-kubeconfig`, creates `shopnow` namespace, installs AWS Load Balancer Controller via Helm |
 | `03-deploy-monitoring.yml` | Applies Prometheus + Grafana manifests, waits for rollout, prints port-forward instructions |
+
+**Ansible playbook successful run in Jenkins:**
+
+![Ansible Playbook Success](assets/screenshots/ansible-playbook-success.png)
 
 ---
 
@@ -335,6 +361,18 @@ All manifests live in `k8s/` and are applied by the Jenkins pipeline.
 - **Frontend service** uses `type: LoadBalancer` — Kubernetes cloud controller provisions a Classic ELB automatically. No AWS Load Balancer Controller required.
 - **nginx config** is delivered via a **ConfigMap** mounted as a volume — survives pod restarts and rolling updates without rebuilding the image.
 - **HPA** uses `autoscaling/v2` with both CPU (60%) and Memory (70%) metrics, and separate scale-up/scale-down stabilization windows.
+
+**EKS cluster active in AWS Console:**
+
+![EKS Cluster Active](assets/screenshots/eks-cluster-active.png)
+
+**Pods running in `shopnow` namespace:**
+
+![kubectl get pods](assets/screenshots/kubectl-get-pods.png)
+
+**EC2 instances (Jenkins + EKS nodes):**
+
+![EC2 Instances](assets/screenshots/ec2-instances.png)
 
 **Autoscaling configuration:**
 
@@ -397,6 +435,14 @@ post:
   always  → docker rmi cleanup
 ```
 
+**Build #14 — All stages green (first half):**
+
+![Jenkins Pipeline Stage View 1](assets/screenshots/jenkins-pipeline-stage-view-1.png)
+
+**Build #14 — All stages green (second half + Smoke Test):**
+
+![Jenkins Pipeline Stage View 2](assets/screenshots/jenkins-pipeline-stage-view-2.png)
+
 **Jenkins environment variables:**
 
 | Variable | Value |
@@ -451,6 +497,24 @@ kubectl port-forward svc/prometheus-service 9090:9090 -n shopnow
 kubectl port-forward svc/grafana-service 3000:3000 -n shopnow
 # Open http://localhost:3000  (add Prometheus as data source: http://prometheus-service:9090)
 ```
+
+**Grafana — container CPU usage dashboard:**
+
+![Grafana Dashboard](assets/screenshots/grafana-dashboard.png)
+
+---
+
+## Issues & Fixes
+
+| Problem | Root Cause | Fix Applied |
+|---|---|---|
+| ALB Ingress not reconciling | IMDSv2 hop limit = 1 blocked pod access to EC2 metadata | Switched frontend-service to `type: LoadBalancer` (Classic ELB, no ALB controller needed) |
+| Products not loading in frontend | React built with `/aryan/api` base URL but nginx had no `/aryan/api/` proxy block | Added `location /aryan/api/` proxy block *before* the `/aryan/` rewrite location in nginx |
+| nginx fix lost after pod restart | Config patched in running container via `kubectl exec` — not persisted | Delivered nginx config via a **ConfigMap** mounted as a volume — survives rolling updates |
+| Helm `--set env[0].name=` bug | Indexed array syntax corrupted env var name to integer `0` | Deleted all Helm release secrets, reinstalled controller with correct values |
+| Terraform state conflict | Concurrent applies racing on local state | S3 backend with DynamoDB conditional-write locking |
+| Docker permission denied | `jenkins` user not in `docker` group | Ansible `user` task adds jenkins to docker group |
+
 ---
 
 ## Author
